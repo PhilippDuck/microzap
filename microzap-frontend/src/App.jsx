@@ -1,12 +1,16 @@
-import { Center, Heading, HStack } from "@chakra-ui/react";
+import Navbar from "./components/Navbar";
+import Home from "./Home";
+import { Center } from "@chakra-ui/react";
 
 function App() {
   return (
-    <Center flexDir="column" gap="8" minH="dvh">
-      <HStack>
-        <Heading>MicroZap</Heading>
-      </HStack>
-    </Center>
+    <>
+      <Navbar />
+      <Center>
+        {" "}
+        <Home />
+      </Center>
+    </>
   );
 }
 
