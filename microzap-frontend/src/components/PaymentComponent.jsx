@@ -1,0 +1,131 @@
+// src/components/PaymentComponent.jsx
+import { useState, useEffect } from "react";
+import { Box, Text, Button, Image, Spinner, Card } from "@chakra-ui/react";
+
+function PaymentComponent(props) {
+  const { articleId, isPremium, onUnlock } = props;
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [invoice, setInvoice] = useState(null);
+  const [qrCode, setQrCode] = useState(null);
+  const [paymentHash, setPaymentHash] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [price, setPrice] = useState(10); // Standardpreis, wird vom Server überschrieben
+
+  // Funktion zum Abrufen des Preises vom Server
+  const fetchPrice = async () => {
+    try {
+      const response = await fetch(
+        `http://localhost:3001/get-price?articleId=${articleId}`
+      );
+      const data = await response.json();
+      if (response.ok) {
+        setPrice(data.amount || 10); // Fallback auf 10 Satoshis
+      } else {
+        throw new Error(data.error || "Fehler beim Abrufen des Preises");
+      }
+    } catch (err) {
+      setError("Fehler beim Abrufen des Preises: " + err.message);
+    }
+  };
+
+  // Funktion zum Erstellen einer Rechnung
+  const createInvoice = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("http://localhost:3001/create-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "article", articleId }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setInvoice(data.paymentRequest);
+        setQrCode(data.qrCode);
+        setPaymentHash(data.paymentHash);
+      } else {
+        throw new Error(data.error || "Fehler beim Erstellen der Rechnung");
+      }
+    } catch (err) {
+      setError("Fehler beim Erstellen der Rechnung: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Funktion zum Überprüfen der Zahlung
+  const checkPayment = async (hash) => {
+    try {
+      const response = await fetch(
+        `http://localhost:3001/check-payment/${hash}`
+      );
+      const data = await response.json();
+      if (data.paid) {
+        setIsUnlocked(true);
+        setInvoice(null);
+        setQrCode(null);
+        setPaymentHash(null);
+        if (onUnlock) onUnlock();
+      }
+    } catch (err) {
+      setError("Fehler beim Überprüfen der Zahlung: " + err.message);
+    }
+  };
+
+  // Effekt zum Laden des Preises und regelmäßigen Überprüfen der Zahlung
+  useEffect(() => {
+    fetchPrice(); // Preis beim Laden holen
+    let interval;
+    if (paymentHash && !isUnlocked) {
+      interval = setInterval(() => checkPayment(paymentHash), 1000); // Alle 5 Sekunden prüfen
+    }
+    return () => clearInterval(interval); // Cleanup
+  }, [paymentHash, isUnlocked, articleId]);
+
+  // Rendern
+  if (isUnlocked) return null; // Wenn entsperrt, nichts rendern
+  return (
+    <Card.Root>
+      <Card.Body>
+        {qrCode ? (
+          <Box>
+            <Text mt={2}>Scanne den QR-Code mit deiner Lightning-Wallet:</Text>
+            <Image src={qrCode} alt="Payment QR Code" mt={2} rounded={"lg"} />
+            {error && (
+              <Text color="red.500" mt={2}>
+                {error}
+              </Text>
+            )}
+          </Box>
+        ) : (
+          <Box position="relative">
+            <Button
+              mt={4}
+              colorScheme="blue"
+              onClick={createInvoice}
+              isLoading={loading}
+              isDisabled={loading}
+              spinnerPlacement="start"
+              width={"sm"}
+            >
+              {!loading ? (
+                "Artikel bezahlen (" + price + " Sat)"
+              ) : (
+                <Spinner
+                  thickness="4px"
+                  speed="0.65s"
+                  emptyColor="gray.200"
+                  size="md"
+                  transform="translate(-50%, -50%)"
+                />
+              )}
+            </Button>
+          </Box>
+        )}
+      </Card.Body>
+    </Card.Root>
+  );
+}
+
+export default PaymentComponent;

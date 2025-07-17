@@ -1,0 +1,27 @@
+# Ignoriere die SQLite-Datenbank
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignoriere Umgebungsvariablen
+.env
+.env.local
+.env.development
+.env.production
+
+# Ignoriere Node.js- und Build-Dateien
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+
+# Ignoriere IDE-spezifische Dateien
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Ignoriere temporäre Dateien
+*.swp
+.DS_Store

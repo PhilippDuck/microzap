@@ -15,5 +15,14 @@
     "url": "https://github.com/PhilippDuck/microzap/issues"
   },
   "homepage": "https://github.com/PhilippDuck/microzap#readme",
-  "description": ""
+  "description": "",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "qrcode": "^1.5.4",
+    "sqlite3": "^5.1.7",
+    "uuid": "^11.1.0"
+  }
 }
