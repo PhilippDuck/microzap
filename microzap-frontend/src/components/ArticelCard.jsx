@@ -1,6 +1,6 @@
 // src/components/ArticleCard.jsx
 import { useNavigate } from "react-router";
-import { Card, Button, Flex, Badge, Text } from "@chakra-ui/react"; // Adjusted imports for Anatomy API
+import { Card, Button, Flex, Badge, Text, Box } from "@chakra-ui/react"; // Adjusted imports for Anatomy API
 
 function ArticleCard(props) {
   const { article } = props;
@@ -16,6 +16,14 @@ function ArticleCard(props) {
   const navigate = useNavigate();
   const handleClick = () => {
     navigate(`/article/${id}`);
+  };
+
+  // Prüfe, ob der Artikel im localStorage als gekauft markiert ist
+  const isPurchased = () => {
+    const paidArticles = JSON.parse(
+      localStorage.getItem("paidArticles") || "[]"
+    );
+    return paidArticles.some((item) => item.id === id.toString());
   };
 
   return (
@@ -36,9 +44,12 @@ function ArticleCard(props) {
           <Text fontSize="sm" color="gray.500">
             {date}
           </Text>
-          <Badge colorPalette={type === "free" ? "green" : "yellow"}>
-            {type.toUpperCase()}
-          </Badge>
+          <Box>
+            <Badge colorPalette={type === "free" ? "green" : "yellow"} mr={2}>
+              {type.toUpperCase()}
+            </Badge>
+            {isPurchased() && <Badge colorPalette="grey">GEKAUFT</Badge>}
+          </Box>
         </Flex>
       </Card.Body>
     </Card.Root>
