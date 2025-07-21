@@ -4,11 +4,39 @@ const QRCode = require("qrcode");
 const cors = require("cors");
 const sqlite3 = require("sqlite3").verbose();
 const uuid = require("uuid");
+const lnurl = require("lnurl"); // Für LNURL Auth
 require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// LNURL-Server erstellen (basierend auf Doku)
+const lnurlServer = lnurl.createServer({
+  host: "localhost",
+  port: 3005,
+  auth: {
+    apiKeys: [
+      {
+        id: uuid.v4(),
+        key: uuid.v4(),
+        encoding: "hex",
+      },
+    ],
+  },
+  lightning: {
+    backend: "dummy",
+    config: {},
+  },
+});
+
+// Endpunkt zum Generieren eines LNURL-Auth-Strings
+app.get("/lnurl-auth", async (req, res) => {
+  const result = await lnurlServer.generateNewUrl("login");
+  const qrCode = await QRCode.toDataURL(result.encoded);
+  res.json({ qrCode, url: result.url });
+  console.log(qrCode);
+});
 
 // Middleware für erweitertes Request-Logging
 app.use((req, res, next) => {
@@ -138,7 +166,6 @@ app.get("/check-payment/:paymentHash", async (req, res) => {
 
     const paid = response.data.paid;
     if (paid && userId) {
-      // Nur speichern, wenn userId vorhanden ist (authentifiziert)
       console.log(
         "[GET /check-payment] Zahlung bestätigt, speichere Status in DB."
       );
