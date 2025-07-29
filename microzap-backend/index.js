@@ -14,6 +14,7 @@ app.use(express.json());
 // LNURL-Server erstellen (basierend auf Doku)
 const lnurlServer = lnurl.createServer({
   host: "localhost",
+  url: "https://aeaea10b2889.ngrok-free.app",
   port: 3005,
   auth: {
     apiKeys: [
@@ -30,12 +31,17 @@ const lnurlServer = lnurl.createServer({
   },
 });
 
+lnurlServer.on("login", (login) => {
+  console.log("key: " + login.key);
+  console.log("hash: " + login.hash);
+});
+
 // Endpunkt zum Generieren eines LNURL-Auth-Strings
 app.get("/lnurl-auth", async (req, res) => {
   const result = await lnurlServer.generateNewUrl("login");
   const qrCode = await QRCode.toDataURL(result.encoded);
   res.json({ qrCode, url: result.url });
-  console.log(qrCode);
+  console.log(result);
 });
 
 // Middleware für erweitertes Request-Logging
