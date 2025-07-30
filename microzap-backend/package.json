@@ -17,6 +17,7 @@
   "homepage": "https://github.com/PhilippDuck/microzap#readme",
   "description": "",
   "dependencies": {
+    "@noble/curves": "^1.9.6",
     "axios": "^1.10.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
