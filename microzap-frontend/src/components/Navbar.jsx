@@ -1,4 +1,3 @@
-// src/components/Navbar.jsx
 import {
   Box,
   Flex,
@@ -17,29 +16,39 @@ import {
   DialogCloseTrigger,
   CloseButton,
   Image,
+  VStack,
   Text,
   Spinner,
+  Center,
+  DialogRootProvider,
+  useDialog,
 } from "@chakra-ui/react";
 import { useState, useEffect } from "react";
+import { FaCheckCircle } from "react-icons/fa";
 
 function Navbar(props) {
-  const [isOpen, setIsOpen] = useState(false); // Manuelles Zustandsmanagement
+  const dialog = useDialog(); // Dialog-Hook initialisieren
   const [qrCode, setQrCode] = useState(null);
+  const [k1, setK1] = useState(null);
+  const [loginSuccess, setLoginSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(
     !!localStorage.getItem("userId")
-  ); // Prüfe localStorage auf userId
+  );
 
   const fetchAuthCode = async () => {
+    console.log("fetchAuthCode gestartet");
     setLoading(true);
     setError(null);
+    setLoginSuccess(false);
     try {
       const response = await fetch("http://localhost:3001/lnurl-auth");
       const data = await response.json();
-      console.log("Fetch Response:", data); // Debug-Log
+      console.log("Fetch Response:", data);
       if (response.ok) {
         setQrCode(data.qrCode);
+        setK1(data.k1);
       } else {
         throw new Error(data.error || "Fehler beim Abrufen des Auth-Codes");
       }
@@ -48,27 +57,87 @@ function Navbar(props) {
       console.error("Fetch-Fehler:", err);
     } finally {
       setLoading(false);
+      console.log("fetchAuthCode abgeschlossen");
     }
   };
 
+  // Innerhalb des Polling useEffect
   useEffect(() => {
-    if (isOpen && !qrCode && !error && !loading) {
-      fetchAuthCode(); // Starte Fetch nur, wenn Dialog offen ist und noch kein Ergebnis
+    let pollTimer;
+
+    if (dialog.open && k1 && !loginSuccess) {
+      console.log("Polling gestartet für k1:", k1);
+      pollTimer = setInterval(async () => {
+        try {
+          const response = await fetch(
+            `http://localhost:3001/login-status/${k1}`
+          );
+          const data = await response.json();
+          console.log("Login Status Response:", data);
+          if (data.status === "success") {
+            setLoginSuccess(true);
+            // Verzögere das Schließen des Dialogs und setIsLoggedIn
+            setTimeout(() => {
+              console.log("Schließe Dialog nach erfolgreichem Login");
+              setIsLoggedIn(true); // Jetzt erst isLoggedIn setzen
+              setQrCode(null);
+              setK1(null);
+              setLoginSuccess(false);
+            }, 5000); // 5 Sekunden Verzögerung
+          } else if (data.status === "not_found") {
+            setError("k1 nicht gefunden oder abgelaufen");
+          }
+        } catch (err) {
+          console.error("Polling-Fehler:", err);
+          setError("Fehler beim Überprüfen des Login-Status");
+        }
+      }, 3000);
     }
-  }, [isOpen]);
+
+    // Cleanup: Polling stoppen bei Timeout (5 Minuten) oder wenn Dialog geschlossen wird
+    const timeout = setTimeout(() => {
+      if (pollTimer) {
+        console.log("Polling gestoppt wegen Timeout");
+        setError("Login-Versuch abgelaufen");
+        dialog.onClose(); // Dialog schließen bei Timeout
+      }
+    }, 5 * 60 * 1000);
+
+    return () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        console.log("Polling-Cleanup ausgeführt");
+      }
+      clearTimeout(timeout);
+    };
+  }, [dialog.open, k1, loginSuccess, dialog.onClose]);
+
+  // Fetch Auth Code nur, wenn Dialog geöffnet wird
+  useEffect(() => {
+    console.log(
+      "Dialog Zustand:",
+      dialog.open,
+      "qrCode:",
+      qrCode,
+      "loading:",
+      loading,
+      "error:",
+      error,
+      "loginSuccess:",
+      loginSuccess
+    );
+    if (dialog.open && !qrCode && !loading && !error && !loginSuccess) {
+      console.log("Starte fetchAuthCode wegen dialog.open:", dialog.open);
+      fetchAuthCode();
+    }
+  }, [dialog.open]);
 
   const handleLogout = () => {
-    localStorage.removeItem("userId"); // Entferne userId beim Logout
+    localStorage.removeItem("userId");
     setIsLoggedIn(false);
-  };
-
-  // Mock: Simuliere erfolgreichen Login (ersetze mit tatsächlicher Logik)
-  const handleAuthSuccess = () => {
-    const userId = "mockUserId"; // Ersetze mit tatsächlicher userId aus Callback
-    localStorage.setItem("userId", userId);
-    setIsLoggedIn(true);
-    setIsOpen(false); // Schließe manuell
-    setQrCode(null); // Zurücksetzen nach Erfolg
+    setQrCode(null);
+    setK1(null);
+    setLoginSuccess(false);
   };
 
   return (
@@ -84,7 +153,7 @@ function Navbar(props) {
           <Button
             variant="outline"
             colorScheme="whiteAlpha"
-            colorPalette={"yellow"}
+            colorPalette="yellow"
           >
             Get Premium
           </Button>
@@ -92,57 +161,100 @@ function Navbar(props) {
             Profil
           </Button>
 
-          <Dialog.Root placement={"center"}>
-            <DialogTrigger asChild>
-              <Button
-                variant="outline"
-                colorScheme="whiteAlpha"
-                onClick={fetchAuthCode}
-              >
-                Login
-              </Button>
-            </DialogTrigger>
-            <Portal>
-              <DialogBackdrop />
-              <DialogPositioner>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Login with LNURL Auth</DialogTitle>
-                    <DialogCloseTrigger asChild>
-                      <CloseButton size="sm" />
-                    </DialogCloseTrigger>
-                  </DialogHeader>
-                  <DialogBody>
-                    {loading ? (
-                      <Text>Loading Auth Code...</Text>
-                    ) : error ? (
-                      <Text color="red.500">{error}</Text>
-                    ) : qrCode ? (
-                      <>
-                        <Text>
-                          Scan this QR Code with your Lightning Wallet to
-                          authenticate:
-                        </Text>
-                        <Image
-                          src={qrCode}
-                          alt="Auth QR Code"
-                          mx="auto"
-                          mt={4}
-                          rounded={10}
-                        />
-                      </>
-                    ) : (
-                      <Text>Preparing authentication...</Text> // Platzhalter, während fetch läuft
-                    )}
-                  </DialogBody>
+          {isLoggedIn ? (
+            <Button
+              variant="outline"
+              colorScheme="whiteAlpha"
+              onClick={handleLogout}
+            >
+              Logout
+            </Button>
+          ) : (
+            <DialogRootProvider value={dialog}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  colorScheme="whiteAlpha"
+                  onClick={() => {
+                    console.log("Login-Button geklickt");
 
-                  <Dialog.CloseTrigger asChild>
-                    <CloseButton size="sm" />
-                  </Dialog.CloseTrigger>
-                </DialogContent>
-              </DialogPositioner>
-            </Portal>
-          </Dialog.Root>
+                    setError(null);
+                    setQrCode(null);
+                    setK1(null);
+                    setLoginSuccess(false);
+                  }}
+                >
+                  Login
+                </Button>
+              </DialogTrigger>
+              <Portal>
+                <DialogBackdrop />
+                <DialogPositioner>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>
+                        Login mit Bitcoin Lightning Wallet
+                      </DialogTitle>
+                      <DialogCloseTrigger asChild>
+                        <CloseButton size="sm" />
+                      </DialogCloseTrigger>
+                    </DialogHeader>
+                    <DialogBody
+                      display="flex"
+                      flexDirection="column"
+                      alignItems="center"
+                    >
+                      {loading ? (
+                        <Spinner size="lg" />
+                      ) : error ? (
+                        <>
+                          <Text color="red.500">{error}</Text>
+                          <Button
+                            mt={4}
+                            variant="solid"
+                            onClick={fetchAuthCode}
+                          >
+                            Retry
+                          </Button>
+                        </>
+                      ) : loginSuccess ? (
+                        <Center>
+                          <VStack>
+                            <FaCheckCircle size="256px" color="green" />
+                            <Heading mt={4} color="green.500">
+                              Login erfolgreich!
+                            </Heading>
+                          </VStack>
+                        </Center>
+                      ) : qrCode ? (
+                        <>
+                          <Text textAlign="center">
+                            Scanne diesen Code mit deiner Lightning Wallet um
+                            dich einzuloggen:
+                          </Text>
+                          <Image
+                            src={qrCode}
+                            alt="Auth QR Code"
+                            mx="auto"
+                            maxW="512px"
+                            mt={4}
+                            rounded={10}
+                          />
+                        </>
+                      ) : (
+                        <Text>Preparing authentication...</Text>
+                      )}
+                    </DialogBody>
+                    <DialogFooter>
+                      <DialogCloseTrigger asChild>
+                        <CloseButton size="sm" />
+                      </DialogCloseTrigger>
+                    </DialogFooter>
+                  </DialogContent>
+                </DialogPositioner>
+              </Portal>
+            </DialogRootProvider>
+          )}
         </Flex>
       </Flex>
     </Box>

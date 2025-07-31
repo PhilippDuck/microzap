@@ -16,7 +16,9 @@ const db = new sqlite3.Database("database.db", (err) => {
       `
       CREATE TABLE IF NOT EXISTS auth_requests (
         k1 TEXT PRIMARY KEY,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'pending',
+         user_id TEXT
       )
     `,
       (err) => {
@@ -44,19 +46,17 @@ router.get("/lnurl-auth", async (req, res) => {
         "Fehler: secret ist leer oder nicht vorhanden. Verfügbare Schlüssel:",
         Object.keys(result)
       );
-      return res
-        .status(500)
-        .json({
-          error: "Fehler bei der Generierung von secret",
-          availableKeys: Object.keys(result),
-        });
+      return res.status(500).json({
+        error: "Fehler bei der Generierung von secret",
+        availableKeys: Object.keys(result),
+      });
     }
 
     const qrCode = await QRCode.toDataURL(result.encoded);
 
     // secret als k1 in der Datenbank speichern
     db.run(
-      `INSERT INTO auth_requests (k1) VALUES (?)`,
+      `INSERT INTO auth_requests (k1, status) VALUES (?, 'pending')`,
       [result.secret],
       (err) => {
         if (err) {
@@ -72,11 +72,37 @@ router.get("/lnurl-auth", async (req, res) => {
       }
     );
 
-    res.json({ qrCode, url: result.url });
+    // k1 (secret) an das Frontend zurückgeben
+    res.json({ qrCode, url: result.url, k1: result.secret });
   } catch (error) {
     console.error("Fehler bei der Verarbeitung von /lnurl-auth:", error);
     res.status(500).json({ error: "Interner Serverfehler" });
   }
+});
+
+// Neuer Endpunkt zum Überprüfen des Login-Status
+router.get("/login-status/:k1", (req, res) => {
+  const k1 = req.params.k1;
+
+  db.get("SELECT status FROM auth_requests WHERE k1 = ?", [k1], (err, row) => {
+    if (err) {
+      console.error("[DB ERROR] Query failed:", {
+        query: "SELECT status FROM auth_requests WHERE k1 = ?",
+        params: [k1],
+        error: err.message,
+      });
+      return res.status(500).json({ error: "Datenbankfehler" });
+    }
+
+    if (!row) {
+      return res.status(404).json({
+        status: "not_found",
+        message: "k1 nicht gefunden oder abgelaufen",
+      });
+    }
+
+    res.json({ status: row.status });
+  });
 });
 
 // Datenbankverbindung schließen, wenn der Prozess beendet wird
