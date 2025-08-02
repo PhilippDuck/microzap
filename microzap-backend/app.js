@@ -7,7 +7,15 @@ const loggingMiddleware = require("./middleware/logging");
 require("dotenv").config();
 
 const app = express();
-app.use(cors());
+// CORS-Konfiguration für Entwicklung: Alle Origins erlauben
+app.use(
+  cors({
+    origin: true, // Erlaubt alle Origins
+    credentials: true, // Erlaubt Cookies (für HTTP-Only Cookie)
+    methods: ["GET", "POST", "OPTIONS"], // Erlaubte Methoden
+    allowedHeaders: ["Content-Type", "Authorization"], // Erlaubte Header
+  })
+);
 app.use(express.json());
 app.use(loggingMiddleware);
 

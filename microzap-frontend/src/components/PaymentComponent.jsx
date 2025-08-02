@@ -1,6 +1,7 @@
 // src/components/PaymentComponent.jsx
 import { useState, useEffect } from "react";
 import { Text, Button, Image, Spinner, Box } from "@chakra-ui/react";
+import { FaBitcoin } from "react-icons/fa";
 
 function PaymentComponent(props) {
   const { articleId, isPremium, onUnlock } = props;
@@ -146,7 +147,10 @@ function PaymentComponent(props) {
               erstelle QR-Code
             </>
           ) : (
-            `Artikel kaufen (${price} Satoshis)`
+            <>
+              <FaBitcoin />
+              Artikel kaufen ({price} Sat)
+            </>
           )}
         </Button>
       )}

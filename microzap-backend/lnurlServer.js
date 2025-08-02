@@ -5,7 +5,7 @@ const crypto = require("crypto");
 
 const lnurlServer = lnurl.createServer({
   host: "localhost",
-  url: "https://aeaea10b2889.ngrok-free.app",
+  url: "https://e1ee676e4d2a.ngrok-free.app",
   port: 3005,
   auth: {
     apiKeys: [
