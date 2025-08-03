@@ -74,14 +74,7 @@ function LoginDialog() {
                     Scanne diesen Code mit deiner Lightning Wallet um dich
                     einzuloggen:
                   </Text>
-                  <Image
-                    src={qrCode}
-                    alt="Auth QR Code"
-                    mx="auto"
-                    maxW="512px"
-                    mt={4}
-                    rounded={10}
-                  />
+                  <Image src={qrCode} alt="Auth QR Code" mt={4} rounded={10} />
                 </>
               ) : (
                 <Text>Preparing authentication...</Text>

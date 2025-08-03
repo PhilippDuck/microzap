@@ -41,11 +41,11 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      /*       await axios.post(
+      await axios.post(
         "http://localhost:3001/logout",
         {},
         { withCredentials: true }
-      ); */
+      );
       setIsAuthenticated(false);
       setQrCode(null);
       setK1(null);
@@ -71,31 +71,13 @@ export const AuthProvider = ({ children }) => {
     if (k1 && !loginSuccess) {
       pollTimer = setInterval(async () => {
         try {
-          // Lese paidArticles aus localStorage
-          const paidArticles =
-            JSON.parse(localStorage.getItem("paidArticles")) || [];
-
-          // Sende POST-Request mit paidArticles im Body
-          const response = await axios.post(
+          // Sende GET-Request für Login-Status (kein paidArticles mehr)
+          const response = await axios.get(
             `http://localhost:3001/login-status/${k1}`,
-            { paidArticles },
             { withCredentials: true }
           );
           const data = response.data;
           if (data.status === "success") {
-            // Speichere paidArticles aus der Response in localStorage
-            if (Array.isArray(data.paidArticles)) {
-              localStorage.setItem(
-                "paidArticles",
-                JSON.stringify(data.paidArticles)
-              );
-            } else {
-              console.warn(
-                "Invalid paidArticles format in response:",
-                data.paidArticles
-              );
-            }
-
             setLoginSuccess(true);
             setIsAuthenticated(true);
             setQrCode(null);
@@ -107,6 +89,39 @@ export const AuthProvider = ({ children }) => {
                 "Du hast dich erfolgreich mit deiner Lightning Wallet eingeloggt.",
               type: "success",
             });
+
+            // Nach erfolgreichem Login: Sende paidArticles an /paidArticles
+            try {
+              const paidArticles =
+                JSON.parse(localStorage.getItem("paidArticles")) || [];
+              const paidArticlesResponse = await axios.post(
+                "http://localhost:3001/paidArticles",
+                { paidArticles },
+                { withCredentials: true }
+              );
+              const paidArticlesData = paidArticlesResponse.data;
+
+              // Speichere kombinierte paidArticles in localStorage
+              if (Array.isArray(paidArticlesData.paidArticles)) {
+                localStorage.setItem(
+                  "paidArticles",
+                  JSON.stringify(paidArticlesData.paidArticles)
+                );
+              } else {
+                console.warn(
+                  "Invalid paidArticles format in /paidArticles response:",
+                  paidArticlesData.paidArticles
+                );
+              }
+            } catch (paidErr) {
+              console.error("Fehler beim Senden von paidArticles:", paidErr);
+              toaster.create({
+                title: "Fehler",
+                description:
+                  "Fehler beim Synchronisieren der gekauften Artikel",
+                type: "error",
+              });
+            }
           } else if (data.status === "not_found") {
             setError("k1 nicht gefunden oder abgelaufen");
             toaster.create({
@@ -151,6 +166,35 @@ export const AuthProvider = ({ children }) => {
           withCredentials: true,
         });
         setIsAuthenticated(res.data.isAuthenticated);
+        if (res.data.isAuthenticated) {
+          // Bei authentifiziertem Status: Hole und synchronisiere paidArticles
+          try {
+            const paidArticles =
+              JSON.parse(localStorage.getItem("paidArticles")) || [];
+            const paidArticlesResponse = await axios.post(
+              "http://localhost:3001/paidArticles",
+              { paidArticles },
+              { withCredentials: true }
+            );
+            const paidArticlesData = paidArticlesResponse.data;
+            if (Array.isArray(paidArticlesData.paidArticles)) {
+              localStorage.setItem(
+                "paidArticles",
+                JSON.stringify(paidArticlesData.paidArticles)
+              );
+            } else {
+              console.warn(
+                "Invalid paidArticles format in /paidArticles response:",
+                paidArticlesData.paidArticles
+              );
+            }
+          } catch (paidErr) {
+            console.error(
+              "Fehler beim Synchronisieren von paidArticles:",
+              paidErr
+            );
+          }
+        }
       } catch (err) {
         setIsAuthenticated(false);
       }

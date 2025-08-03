@@ -86,10 +86,9 @@ router.get("/lnurl-auth", async (req, res) => {
   }
 });
 
-// Neuer Endpunkt zum Überprüfen des Login-Status
-router.post("/login-status/:k1", (req, res) => {
+// Endpunkt zum Überprüfen des Login-Status
+router.get("/login-status/:k1", (req, res) => {
   const k1 = req.params.k1;
-  const paidArticlesFromBody = req.body.paidArticles || []; // Extrahiere paidArticles aus dem Body
 
   db.get(
     "SELECT status, user_id FROM auth_requests WHERE k1 = ?",
@@ -125,95 +124,101 @@ router.post("/login-status/:k1", (req, res) => {
           maxAge: 3600 * 1000,
         });
 
-        // Hole den User aus der users-Tabelle
-        db.get(
-          "SELECT * FROM users WHERE id = ?",
-          [row.user_id],
-          (err, userRow) => {
-            if (err) {
-              console.error("[DB ERROR] Query failed:", {
-                query: "SELECT * FROM users WHERE id = ?",
-                params: [row.user_id],
-                error: err.message,
-              });
-              return res.status(500).json({ error: "Datenbankfehler" });
-            }
-
-            let updatedPaidArticles = paidArticlesFromBody;
-
-            if (userRow) {
-              // User existiert: Kombiniere paid_articles aus DB und Body
-              const dbPaidArticles = userRow.paid_articles
-                ? JSON.parse(userRow.paid_articles)
-                : [];
-
-              // Kombiniere und vermeide Duplikate (basierend auf id)
-              const combinedArticles = [...dbPaidArticles];
-              const dbIds = new Set(
-                dbPaidArticles.map((article) => article.id)
-              );
-
-              paidArticlesFromBody.forEach((newArticle) => {
-                if (!dbIds.has(newArticle.id)) {
-                  combinedArticles.push(newArticle);
-                  dbIds.add(newArticle.id);
-                }
-              });
-
-              updatedPaidArticles = combinedArticles;
-
-              // Update DB mit kombinierten paid_articles
-              db.run(
-                "UPDATE users SET paid_articles = ? WHERE id = ?",
-                [JSON.stringify(combinedArticles), row.user_id],
-                (err) => {
-                  if (err) {
-                    console.error("[DB ERROR] Update failed:", {
-                      query: "UPDATE users SET paid_articles = ? WHERE id = ?",
-                      params: [JSON.stringify(combinedArticles), row.user_id],
-                      error: err.message,
-                    });
-                    return res.status(500).json({ error: "Datenbankfehler" });
-                  }
-                  console.log(
-                    `paid_articles für User ${row.user_id} aktualisiert.`
-                  );
-                }
-              );
-            } else {
-              // User neu anlegen: Übernimm paidArticles aus Body
-              db.run(
-                "INSERT INTO users (id, paid_articles) VALUES (?, ?)",
-                [row.user_id, JSON.stringify(paidArticlesFromBody)],
-                (err) => {
-                  if (err) {
-                    console.error("[DB ERROR] Insert failed:", {
-                      query:
-                        "INSERT INTO users (id, paid_articles) VALUES (?, ?)",
-                      params: [
-                        row.user_id,
-                        JSON.stringify(paidArticlesFromBody),
-                      ],
-                      error: err.message,
-                    });
-                    return res.status(500).json({ error: "Datenbankfehler" });
-                  }
-                  console.log(
-                    `Neuer User ${row.user_id} mit paid_articles angelegt.`
-                  );
-                }
-              );
-            }
-
-            // Sende Response mit status und aktualisierter paidArticles-Liste
-            res.json({ status: "success", paidArticles: updatedPaidArticles });
-          }
-        );
+        res.json({ status: "success" });
       } else {
         res.json({ status: row.status });
       }
     }
   );
+});
+
+// Neue API-Schnittstelle: POST /paidArticles (da GET keinen Body hat; alternativ GET mit Query-Param, aber POST ist besser für Arrays)
+router.post("/paidArticles", (req, res) => {
+  const token = req.cookies.authToken;
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.sub; // Extrahiere user_id aus JWT
+
+    const paidArticlesFromBody = req.body.paidArticles || []; // Extrahiere paidArticles aus dem Body
+
+    // Hole den User aus der users-Tabelle
+    db.get("SELECT * FROM users WHERE id = ?", [userId], (err, userRow) => {
+      if (err) {
+        console.error("[DB ERROR] Query failed:", {
+          query: "SELECT * FROM users WHERE id = ?",
+          params: [userId],
+          error: err.message,
+        });
+        return res.status(500).json({ error: "Datenbankfehler" });
+      }
+
+      let updatedPaidArticles = paidArticlesFromBody;
+
+      if (userRow) {
+        // User existiert: Kombiniere paid_articles aus DB und Body
+        const dbPaidArticles = userRow.paid_articles
+          ? JSON.parse(userRow.paid_articles)
+          : [];
+
+        // Kombiniere und vermeide Duplikate (basierend auf id)
+        const combinedArticles = [...dbPaidArticles];
+        const dbIds = new Set(dbPaidArticles.map((article) => article.id));
+
+        paidArticlesFromBody.forEach((newArticle) => {
+          if (!dbIds.has(newArticle.id)) {
+            combinedArticles.push(newArticle);
+            dbIds.add(newArticle.id);
+          }
+        });
+
+        updatedPaidArticles = combinedArticles;
+
+        // Update DB mit kombinierten paid_articles
+        db.run(
+          "UPDATE users SET paid_articles = ? WHERE id = ?",
+          [JSON.stringify(combinedArticles), userId],
+          (err) => {
+            if (err) {
+              console.error("[DB ERROR] Update failed:", {
+                query: "UPDATE users SET paid_articles = ? WHERE id = ?",
+                params: [JSON.stringify(combinedArticles), userId],
+                error: err.message,
+              });
+              return res.status(500).json({ error: "Datenbankfehler" });
+            }
+            console.log(`paid_articles für User ${userId} aktualisiert.`);
+          }
+        );
+      } else {
+        // User neu anlegen: Übernimm paidArticles aus Body
+        db.run(
+          "INSERT INTO users (id, paid_articles) VALUES (?, ?)",
+          [userId, JSON.stringify(paidArticlesFromBody)],
+          (err) => {
+            if (err) {
+              console.error("[DB ERROR] Insert failed:", {
+                query: "INSERT INTO users (id, paid_articles) VALUES (?, ?)",
+                params: [userId, JSON.stringify(paidArticlesFromBody)],
+                error: err.message,
+              });
+              return res.status(500).json({ error: "Datenbankfehler" });
+            }
+            console.log(`Neuer User ${userId} mit paid_articles angelegt.`);
+          }
+        );
+      }
+
+      // Sende Response mit kombinierter paidArticles-Liste
+      res.json({ paidArticles: updatedPaidArticles });
+    });
+  } catch (err) {
+    console.error("JWT verification failed:", err.message);
+    res.status(401).json({ error: "Invalid token" });
+  }
 });
 
 // Datenbankverbindung schließen, wenn der Prozess beendet wird
