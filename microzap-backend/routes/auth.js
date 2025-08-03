@@ -2,11 +2,11 @@ const express = require("express");
 const QRCode = require("qrcode");
 const lnurlServer = require("../lnurlServer");
 const sqlite3 = require("sqlite3").verbose();
-const jwt = require("jsonwebtoken"); // Neu: Für JWT-Generierung
-const cookieParser = require("cookie-parser"); // Neu: Für Cookie-Handling
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 
 const router = express.Router();
-router.use(cookieParser()); // Middleware für Cookies
+router.use(cookieParser());
 
 // Lade JWT_SECRET aus .env oder verwende Fallback
 const JWT_SECRET = process.env.JWT_SECRET || "dein-geheimer-key";
@@ -17,7 +17,6 @@ const db = new sqlite3.Database("database.db", (err) => {
     console.error("Fehler beim Öffnen der Datenbank:", err.message);
   } else {
     console.log("Verbindung zur SQLite-Datenbank hergestellt.");
-    // Tabelle auth_requests erstellen, falls sie nicht existiert
     db.run(
       `
       CREATE TABLE IF NOT EXISTS auth_requests (
@@ -33,25 +32,35 @@ const db = new sqlite3.Database("database.db", (err) => {
         }
       }
     );
+    db.run(
+      `
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        premium_start TIMESTAMP,
+        premium_end TIMESTAMP,
+        paid_articles TEXT,
+        payment_hash TEXT
+      )
+    `,
+      (err) => {
+        if (err) {
+          console.error(
+            "Fehler beim Erstellen der users-Tabelle:",
+            err.message
+          );
+        }
+      }
+    );
   }
 });
 
 router.get("/lnurl-auth", async (req, res) => {
   try {
     const result = await lnurlServer.generateNewUrl("login");
+    console.log("LNURL-Auth Result:", JSON.stringify(result, null, 2));
 
-    // Detailliertes Debugging des result-Objekts
-    console.log(
-      "LNURL-Auth Result (komplett):",
-      JSON.stringify(result, null, 2)
-    );
-
-    // Überprüfen, ob secret vorhanden und nicht leer ist
     if (!result.secret || result.secret.trim() === "") {
-      console.error(
-        "Fehler: secret ist leer oder nicht vorhanden. Verfügbare Schlüssel:",
-        Object.keys(result)
-      );
+      console.error("Fehler: secret ist leer oder nicht vorhanden.");
       return res.status(500).json({
         error: "Fehler bei der Generierung von secret",
         availableKeys: Object.keys(result),
@@ -59,8 +68,6 @@ router.get("/lnurl-auth", async (req, res) => {
     }
 
     const qrCode = await QRCode.toDataURL(result.encoded);
-
-    // secret als k1 in der Datenbank speichern
     db.run(
       `INSERT INTO auth_requests (k1, status) VALUES (?, 'pending')`,
       [result.secret],
@@ -78,7 +85,6 @@ router.get("/lnurl-auth", async (req, res) => {
       }
     );
 
-    // k1 (secret) an das Frontend zurückgeben
     res.json({ qrCode, url: result.url, k1: result.secret });
   } catch (error) {
     console.error("Fehler bei der Verarbeitung von /lnurl-auth:", error);
@@ -86,7 +92,6 @@ router.get("/lnurl-auth", async (req, res) => {
   }
 });
 
-// Endpunkt zum Überprüfen des Login-Status
 router.get("/login-status/:k1", (req, res) => {
   const k1 = req.params.k1;
 
@@ -111,12 +116,10 @@ router.get("/login-status/:k1", (req, res) => {
       }
 
       if (row.status === "success" && row.user_id) {
-        // Generiere JWT mit user_id als sub
         const token = jwt.sign({ sub: row.user_id }, JWT_SECRET, {
           expiresIn: "1h",
         });
 
-        // Setze HTTP-Only Cookie
         res.cookie("authToken", token, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
@@ -132,7 +135,6 @@ router.get("/login-status/:k1", (req, res) => {
   );
 });
 
-// Neue API-Schnittstelle: POST /paidArticles (da GET keinen Body hat; alternativ GET mit Query-Param, aber POST ist besser für Arrays)
 router.post("/paidArticles", (req, res) => {
   const token = req.cookies.authToken;
   if (!token) {
@@ -141,11 +143,10 @@ router.post("/paidArticles", (req, res) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.sub; // Extrahiere user_id aus JWT
+    const userId = decoded.sub;
 
-    const paidArticlesFromBody = req.body.paidArticles || []; // Extrahiere paidArticles aus dem Body
+    const paidArticlesFromBody = req.body.paidArticles || [];
 
-    // Hole den User aus der users-Tabelle
     db.get("SELECT * FROM users WHERE id = ?", [userId], (err, userRow) => {
       if (err) {
         console.error("[DB ERROR] Query failed:", {
@@ -159,12 +160,9 @@ router.post("/paidArticles", (req, res) => {
       let updatedPaidArticles = paidArticlesFromBody;
 
       if (userRow) {
-        // User existiert: Kombiniere paid_articles aus DB und Body
         const dbPaidArticles = userRow.paid_articles
           ? JSON.parse(userRow.paid_articles)
           : [];
-
-        // Kombiniere und vermeide Duplikate (basierend auf id)
         const combinedArticles = [...dbPaidArticles];
         const dbIds = new Set(dbPaidArticles.map((article) => article.id));
 
@@ -177,7 +175,6 @@ router.post("/paidArticles", (req, res) => {
 
         updatedPaidArticles = combinedArticles;
 
-        // Update DB mit kombinierten paid_articles
         db.run(
           "UPDATE users SET paid_articles = ? WHERE id = ?",
           [JSON.stringify(combinedArticles), userId],
@@ -194,7 +191,6 @@ router.post("/paidArticles", (req, res) => {
           }
         );
       } else {
-        // User neu anlegen: Übernimm paidArticles aus Body
         db.run(
           "INSERT INTO users (id, paid_articles) VALUES (?, ?)",
           [userId, JSON.stringify(paidArticlesFromBody)],
@@ -212,7 +208,6 @@ router.post("/paidArticles", (req, res) => {
         );
       }
 
-      // Sende Response mit kombinierter paidArticles-Liste
       res.json({ paidArticles: updatedPaidArticles });
     });
   } catch (err) {
@@ -221,7 +216,137 @@ router.post("/paidArticles", (req, res) => {
   }
 });
 
-// Datenbankverbindung schließen, wenn der Prozess beendet wird
+// Neuer Logout-Endpunkt
+router.post("/logout", (req, res) => {
+  const token = req.cookies.authToken;
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    jwt.verify(token, JWT_SECRET); // Verifiziere das Token
+    res.clearCookie("authToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("JWT verification failed:", err.message);
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+// Status-Check-Endpunkt
+router.get("/auth/status", (req, res) => {
+  const token = req.cookies.authToken;
+  if (!token) {
+    return res.json({ isAuthenticated: false });
+  }
+
+  try {
+    jwt.verify(token, JWT_SECRET);
+    res.json({ isAuthenticated: true });
+  } catch (err) {
+    res.json({ isAuthenticated: false });
+  }
+});
+
+// Neue Schnittstelle: GET /user-info
+router.get("/user-info", (req, res) => {
+  const token = req.cookies.authToken;
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.sub; // Wallet ID ist user_id
+
+    db.get(
+      "SELECT premium_start, premium_end FROM users WHERE id = ?",
+      [userId],
+      (err, row) => {
+        if (err) {
+          console.error("[DB ERROR] Query failed:", {
+            query: "SELECT premium_start, premium_end FROM users WHERE id = ?",
+            params: [userId],
+            error: err.message,
+          });
+          return res.status(500).json({ error: "Datenbankfehler" });
+        }
+
+        if (!row) {
+          return res.status(404).json({ error: "User not found" });
+        }
+
+        const currentDate = new Date();
+        const premiumEnd = row.premium_end ? new Date(row.premium_end) : null;
+        const status =
+          premiumEnd && premiumEnd > currentDate ? "premium" : "free";
+
+        res.json({
+          walletId: userId,
+          status,
+          premiumEnd: premiumEnd ? premiumEnd.toISOString() : null,
+        });
+      }
+    );
+  } catch (err) {
+    console.error("JWT verification failed:", err.message);
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+// Neue Schnittstelle: POST /delete-account
+router.post("/delete-account", (req, res) => {
+  const token = req.cookies.authToken;
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.sub;
+
+    db.run("DELETE FROM users WHERE id = ?", [userId], (err) => {
+      if (err) {
+        console.error("[DB ERROR] Delete failed:", {
+          query: "DELETE FROM users WHERE id = ?",
+          params: [userId],
+          error: err.message,
+        });
+        return res.status(500).json({ error: "Datenbankfehler" });
+      }
+
+      // Optional: Lösche auch auth_requests für den User
+      db.run("DELETE FROM auth_requests WHERE user_id = ?", [userId], (err) => {
+        if (err) {
+          console.error("[DB ERROR] Delete auth_requests failed:", err.message);
+        }
+      });
+
+      // Lösche den Cookie unabhängig von der Verifizierung
+      res.clearCookie("authToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+      });
+
+      res.json({ success: true });
+    });
+  } catch (err) {
+    console.error("JWT verification failed:", err.message);
+    // Trotz Fehler den Cookie löschen, um den Logout zu erzwingen
+    res.clearCookie("authToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
 process.on("SIGINT", () => {
   db.close((err) => {
     if (err) {

@@ -1,9 +1,8 @@
+import { Link } from "react-router"; // Add this import
 import { Box, Flex, Heading, Button } from "@chakra-ui/react";
 import { useContext } from "react";
-import { AuthContext } from "../context/AuthContext"; // Passe den Pfad an
-import LoginDialog from "./LoginDialog"; // Passe den Pfad an
-import { FaRegUser } from "react-icons/fa";
-import { MdLogout, MdOutlineDiamond } from "react-icons/md";
+import { AuthContext } from "../context/AuthContext";
+import LoginDialog from "./LoginDialog";
 
 function Navbar(props) {
   const { isAuthenticated, logout } = useContext(AuthContext);
@@ -18,18 +17,26 @@ function Navbar(props) {
       >
         <Heading size="2xl">MicroZap</Heading>
         <Flex gap={4}>
-          <Button variant="outline" colorPalette="yellow">
-            <MdOutlineDiamond /> Get Premium
+          <Button
+            variant="outline"
+            colorScheme="whiteAlpha"
+            colorPalette="yellow"
+          >
+            Get Premium
           </Button>
 
           {isAuthenticated ? (
             <>
-              <Button variant="outline">
-                <FaRegUser />
+              {" "}
+              <Button
+                as={Link}
+                to="/profile"
+                variant="outline"
+                colorScheme="whiteAlpha"
+              >
                 Profil
               </Button>
               <Button variant="outline" colorPalette="red" onClick={logout}>
-                <MdLogout />
                 Logout
               </Button>
             </>

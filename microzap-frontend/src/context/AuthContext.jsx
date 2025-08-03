@@ -65,13 +65,38 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const deleteAccount = async () => {
+    try {
+      await axios.post(
+        "http://localhost:3001/delete-account",
+        {},
+        { withCredentials: true }
+      );
+      setIsAuthenticated(false);
+      setQrCode(null);
+      setK1(null);
+      setLoginSuccess(false);
+      toaster.create({
+        title: "Account gelöscht",
+        description: "Dein Account wurde erfolgreich gelöscht.",
+        type: "success",
+      });
+    } catch (err) {
+      console.error("Error deleting account:", err);
+      toaster.create({
+        title: "Fehler",
+        description: "Fehler beim Löschen des Accounts",
+        type: "error",
+      });
+    }
+  };
+
   // Polling useEffect
   useEffect(() => {
     let pollTimer;
     if (k1 && !loginSuccess) {
       pollTimer = setInterval(async () => {
         try {
-          // Sende GET-Request für Login-Status (kein paidArticles mehr)
           const response = await axios.get(
             `http://localhost:3001/login-status/${k1}`,
             { withCredentials: true }
@@ -90,7 +115,6 @@ export const AuthProvider = ({ children }) => {
               type: "success",
             });
 
-            // Nach erfolgreichem Login: Sende paidArticles an /paidArticles
             try {
               const paidArticles =
                 JSON.parse(localStorage.getItem("paidArticles")) || [];
@@ -101,7 +125,6 @@ export const AuthProvider = ({ children }) => {
               );
               const paidArticlesData = paidArticlesResponse.data;
 
-              // Speichere kombinierte paidArticles in localStorage
               if (Array.isArray(paidArticlesData.paidArticles)) {
                 localStorage.setItem(
                   "paidArticles",
@@ -167,7 +190,6 @@ export const AuthProvider = ({ children }) => {
         });
         setIsAuthenticated(res.data.isAuthenticated);
         if (res.data.isAuthenticated) {
-          // Bei authentifiziertem Status: Hole und synchronisiere paidArticles
           try {
             const paidArticles =
               JSON.parse(localStorage.getItem("paidArticles")) || [];
@@ -208,6 +230,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated,
         login,
         logout,
+        deleteAccount, // Neue Funktion hinzufügen
         qrCode,
         loading,
         error,
