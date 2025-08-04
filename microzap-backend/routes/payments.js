@@ -110,15 +110,20 @@ router.post("/create-invoice", async (req, res) => {
 // Neue Schnittstelle: GET /check-payment/:hash
 router.get("/check-payment/:hash", async (req, res) => {
   const { hash } = req.params;
+  const type = req.query.type; // Hole den Typ (z. B. "premium" oder etwas anderes für Artikel)
   const token = req.cookies.authToken;
-  if (!token) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
+  let userId = null; // User-ID nur bei Bedarf setzen
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.sub;
-    console.log("[GET /check-payment] User ID:", userId);
+    // Authentifizierung nur für Premium-Käufe erforderlich
+    if (type === "premium") {
+      if (!token) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const decoded = jwt.verify(token, JWT_SECRET);
+      userId = decoded.sub;
+      console.log("[GET /check-payment] User ID:", userId);
+    }
 
     const requestHeaders = {
       "X-Api-Key": INVOICE_READ_KEY,
@@ -134,33 +139,29 @@ router.get("/check-payment/:hash", async (req, res) => {
       data: paymentData,
     });
 
-    if (paymentData.paid) {
-      // Aktualisiere Premium-Status bei erfolgreicher Zahlung für Premium
-      if (req.query.type === "premium") {
-        const premiumStart = new Date().toISOString(); // 04.08.2025
-        const premiumEnd = new Date(
-          Date.now() + 30 * 24 * 60 * 60 * 1000
-        ).toISOString(); // 03.09.2025
+    if (paymentData.paid && type === "premium") {
+      // Aktualisiere Premium-Status nur bei erfolgreicher Zahlung für Premium
+      const premiumStart = new Date().toISOString(); // z. B. 04.08.2025
+      const premiumEnd = new Date(
+        Date.now() + 30 * 24 * 60 * 60 * 1000
+      ).toISOString(); // z. B. 03.09.2025
 
-        db.run(
-          "UPDATE users SET premium_start = ?, premium_end = ? WHERE id = ?",
-          [premiumStart, premiumEnd, userId],
-          (err) => {
-            if (err) {
-              console.error("[DB ERROR] Update failed:", {
-                query:
-                  "UPDATE users SET premium_start = ?, premium_end = ? WHERE id = ?",
-                params: [premiumStart, premiumEnd, userId],
-                error: err.message,
-              });
-              return res.status(500).json({ error: "Datenbankfehler" });
-            }
-            console.log(
-              `Premium für User ${userId} aktiviert bis ${premiumEnd}`
-            );
+      db.run(
+        "UPDATE users SET premium_start = ?, premium_end = ? WHERE id = ?",
+        [premiumStart, premiumEnd, userId],
+        (err) => {
+          if (err) {
+            console.error("[DB ERROR] Update failed:", {
+              query:
+                "UPDATE users SET premium_start = ?, premium_end = ? WHERE id = ?",
+              params: [premiumStart, premiumEnd, userId],
+              error: err.message,
+            });
+            return res.status(500).json({ error: "Datenbankfehler" });
           }
-        );
-      }
+          console.log(`Premium für User ${userId} aktiviert bis ${premiumEnd}`);
+        }
+      );
     }
 
     res.json({ paid: paymentData.paid });

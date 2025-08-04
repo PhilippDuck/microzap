@@ -1,4 +1,3 @@
-// src/pages/ArticleDetail.jsx
 import { useParams, useNavigate } from "react-router";
 import {
   Box,
@@ -13,34 +12,50 @@ import {
 import { useState, useEffect } from "react";
 import { articles } from "../data/articles";
 import PaymentComponent from "../components/PaymentComponent";
+import { useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
+import axios from "axios";
+import { toaster } from "@/components/ui/toaster";
 
 function ArticleDetail(props) {
   const { id } = useParams();
   const article = articles.find((a) => a.id === parseInt(id)) || {};
   const navigate = useNavigate();
+  const { isAuthenticated } = useContext(AuthContext);
 
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true); // Zustand für Initialprüfung
+  const [isPremiumUser, setIsPremiumUser] = useState(false);
+  const [error, setError] = useState(null);
 
-  const isPremium = article.type === "premium";
+  const isPremiumArticle = article.type === "premium";
   const teaser = article.fullContent?.substring(0, 100) + "...";
 
   const handleBackToHome = () => {
     navigate("/");
   };
 
-  // Funktion zum Überprüfen der Zahlung
-  const checkPayment = async (hash) => {
+  // Funktion zum Überprüfen des Premium-Status
+  const checkPremiumStatus = async () => {
     try {
-      const response = await fetch(
-        `http://localhost:3001/check-payment/${hash}`
-      );
-      const data = await response.json();
-      if (data.paid) {
-        setIsUnlocked(true);
+      if (isAuthenticated) {
+        const response = await axios.get("http://localhost:3001/user-info", {
+          withCredentials: true,
+        });
+        const data = response.data;
+        setIsPremiumUser(data.status === "premium");
+        console.log("Premium status checked:", data.status);
+      } else {
+        setIsPremiumUser(false);
       }
     } catch (err) {
-      console.error("Fehler beim Überprüfen der Zahlung:", err.message);
+      console.error("Error checking premium status:", err);
+      setError("Fehler beim Abrufen des Premium-Status");
+      toaster.create({
+        title: "Fehler",
+        description: "Fehler beim Abrufen des Premium-Status",
+        type: "error",
+      });
     } finally {
       setInitialLoading(false); // Prüfung abgeschlossen
     }
@@ -48,13 +63,21 @@ function ArticleDetail(props) {
 
   // Prüfung beim Laden der Seite
   useEffect(() => {
-    const storedHash = localStorage.getItem(id);
-    if (storedHash) {
-      checkPayment(storedHash); // Prüfe den gespeicherten Hash
-    } else {
-      setInitialLoading(false); // Kein Hash, sofort rendern
+    checkPremiumStatus();
+
+    // Prüfen, ob der Artikel bereits bezahlt wurde (für nicht-Premium-Nutzer)
+    if (!isPremiumUser && isPremiumArticle) {
+      const paidArticles = JSON.parse(
+        localStorage.getItem("paidArticles") || "[]"
+      );
+      const existingEntry = paidArticles.find(
+        (item) => item.id === id.toString()
+      );
+      if (existingEntry) {
+        setIsUnlocked(true); // Setze isUnlocked, wenn bereits bezahlt
+      }
     }
-  }, [id]);
+  }, [id, isAuthenticated, isPremiumArticle, isPremiumUser]);
 
   // Rendern mit Spinner während der Initialprüfung
   if (initialLoading) {
@@ -81,8 +104,6 @@ function ArticleDetail(props) {
 
   return (
     <Box maxW={"4xl"}>
-      {" "}
-      {/* maxW statt width für Konsistenz */}
       <Button variant={"outline"} size={"xs"} onClick={handleBackToHome}>
         Zurück
       </Button>
@@ -91,16 +112,21 @@ function ArticleDetail(props) {
       <Text fontSize="sm" color="gray.500" mt={1}>
         {article.date} | {article.author}
       </Text>
-      <Badge colorPalette={!isPremium ? "green" : "yellow"} mt={2}>
+      <Badge colorScheme={!isPremiumArticle ? "green" : "yellow"} mt={2}>
         {article.type.toUpperCase()}
       </Badge>
-      {isPurchased() && <Badge colorPalette="grey">GEKAUFT</Badge>}
-      {isPremium && !isUnlocked ? (
+      {isPurchased() && <Badge colorScheme="gray">GEKAUFT</Badge>}
+      {error && (
+        <Text color="red.500" mt={2}>
+          {error}
+        </Text>
+      )}
+      {isPremiumArticle && !isPremiumUser && !isUnlocked ? (
         <>
           <Text mt={4}>{teaser}</Text>
           <PaymentComponent
             articleId={id}
-            isPremium={isPremium}
+            isPremium={isPremiumArticle}
             onUnlock={() => setIsUnlocked(true)}
           />
         </>
