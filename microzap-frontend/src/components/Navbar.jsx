@@ -18,6 +18,8 @@ function Navbar(props) {
         <Heading size="2xl">MicroZap</Heading>
         <Flex gap={4}>
           <Button
+            as={Link}
+            to="/getpremium"
             variant="outline"
             colorScheme="whiteAlpha"
             colorPalette="yellow"

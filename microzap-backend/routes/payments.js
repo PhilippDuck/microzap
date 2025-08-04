@@ -1,6 +1,9 @@
 const express = require("express");
 const axios = require("axios");
 const QRCode = require("qrcode");
+const sqlite3 = require("sqlite3").verbose();
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 const {
   LNBITS_URL,
   INVOICE_READ_KEY,
@@ -9,6 +12,38 @@ const {
 } = require("../config");
 
 const router = express.Router();
+router.use(cookieParser());
+
+// Lade JWT_SECRET aus .env oder verwende Fallback
+const JWT_SECRET = process.env.JWT_SECRET || "dein-geheimer-key";
+
+// Datenbankverbindung einrichten
+const db = new sqlite3.Database("database.db", (err) => {
+  if (err) {
+    console.error("Fehler beim Öffnen der Datenbank:", err.message);
+  } else {
+    console.log("Verbindung zur SQLite-Datenbank hergestellt.");
+    db.run(
+      `
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        premium_start TIMESTAMP,
+        premium_end TIMESTAMP,
+        paid_articles TEXT,
+        payment_hash TEXT
+      )
+    `,
+      (err) => {
+        if (err) {
+          console.error(
+            "Fehler beim Erstellen der users-Tabelle:",
+            err.message
+          );
+        }
+      }
+    );
+  }
+});
 
 router.get("/get-price", (req, res) => {
   const { articleId } = req.query;
@@ -69,6 +104,73 @@ router.post("/create-invoice", async (req, res) => {
     res
       .status(500)
       .json({ error: `Fehler beim Erstellen der Rechnung: ${error.message}` });
+  }
+});
+
+// Neue Schnittstelle: GET /check-payment/:hash
+router.get("/check-payment/:hash", async (req, res) => {
+  const { hash } = req.params;
+  const token = req.cookies.authToken;
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.sub;
+    console.log("[GET /check-payment] User ID:", userId);
+
+    const requestHeaders = {
+      "X-Api-Key": INVOICE_READ_KEY,
+    };
+    const paymentResponse = await axios.get(
+      `${LNBITS_URL}/api/v1/payments/${hash}`,
+      { headers: requestHeaders }
+    );
+    const paymentData = paymentResponse.data;
+
+    console.log("[GET /check-payment] LNBits API Response:", {
+      status: paymentResponse.status,
+      data: paymentData,
+    });
+
+    if (paymentData.paid) {
+      // Aktualisiere Premium-Status bei erfolgreicher Zahlung für Premium
+      if (req.query.type === "premium") {
+        const premiumStart = new Date().toISOString(); // 04.08.2025
+        const premiumEnd = new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000
+        ).toISOString(); // 03.09.2025
+
+        db.run(
+          "UPDATE users SET premium_start = ?, premium_end = ? WHERE id = ?",
+          [premiumStart, premiumEnd, userId],
+          (err) => {
+            if (err) {
+              console.error("[DB ERROR] Update failed:", {
+                query:
+                  "UPDATE users SET premium_start = ?, premium_end = ? WHERE id = ?",
+                params: [premiumStart, premiumEnd, userId],
+                error: err.message,
+              });
+              return res.status(500).json({ error: "Datenbankfehler" });
+            }
+            console.log(
+              `Premium für User ${userId} aktiviert bis ${premiumEnd}`
+            );
+          }
+        );
+      }
+    }
+
+    res.json({ paid: paymentData.paid });
+  } catch (err) {
+    console.error("Error checking payment:", err.message);
+    if (err.name === "JsonWebTokenError") {
+      res.status(401).json({ error: "Invalid token" });
+    } else {
+      res.status(500).json({ error: "Fehler beim Überprüfen der Zahlung" });
+    }
   }
 });
 

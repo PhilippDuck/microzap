@@ -1,9 +1,11 @@
 const express = require("express");
 const QRCode = require("qrcode");
+const axios = require("axios");
 const lnurlServer = require("../lnurlServer");
 const sqlite3 = require("sqlite3").verbose();
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
+const { LNBITS_URL, INVOICE_READ_KEY } = require("../config");
 
 const router = express.Router();
 router.use(cookieParser());
@@ -261,7 +263,7 @@ router.get("/user-info", (req, res) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.sub; // Wallet ID ist user_id
+    const userId = decoded.sub;
 
     db.get(
       "SELECT premium_start, premium_end FROM users WHERE id = ?",
@@ -319,25 +321,21 @@ router.post("/delete-account", (req, res) => {
         return res.status(500).json({ error: "Datenbankfehler" });
       }
 
-      // Optional: Lösche auch auth_requests für den User
       db.run("DELETE FROM auth_requests WHERE user_id = ?", [userId], (err) => {
         if (err) {
           console.error("[DB ERROR] Delete auth_requests failed:", err.message);
         }
       });
 
-      // Lösche den Cookie unabhängig von der Verifizierung
       res.clearCookie("authToken", {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
       });
-
       res.json({ success: true });
     });
   } catch (err) {
     console.error("JWT verification failed:", err.message);
-    // Trotz Fehler den Cookie löschen, um den Logout zu erzwingen
     res.clearCookie("authToken", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
