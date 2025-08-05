@@ -2,6 +2,7 @@ const lnurl = require("lnurl");
 const uuid = require("uuid");
 const db = require("./database");
 const crypto = require("crypto");
+require("dotenv").config();
 
 const lnurlServer = lnurl.createServer({
   host: "localhost",
@@ -17,8 +18,11 @@ const lnurlServer = lnurl.createServer({
     ],
   },
   lightning: {
-    backend: "dummy",
-    config: {},
+    backend: "lnbits",
+    config: {
+      baseUrl: process.env.LNBITS_URL,
+      adminKey: process.env.ADMIN_KEY,
+    },
   },
 });
 

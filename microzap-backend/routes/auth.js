@@ -6,6 +6,7 @@ const sqlite3 = require("sqlite3").verbose();
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const { LNBITS_URL, INVOICE_READ_KEY } = require("../config");
+require("dotenv").config();
 
 const router = express.Router();
 router.use(cookieParser());
@@ -290,6 +291,9 @@ router.get("/user-info", (req, res) => {
         res.json({
           walletId: userId,
           status,
+          premiumStart: row.premium_start
+            ? new Date(row.premium_start).toISOString()
+            : null,
           premiumEnd: premiumEnd ? premiumEnd.toISOString() : null,
         });
       }

@@ -19,4 +19,12 @@ db.serialize(() => {
   });
 });
 
+// Erstelle die Tabelle, falls nicht vorhanden (in deiner DB-Init)
+db.run(`
+  CREATE TABLE IF NOT EXISTS withdraw_secrets (
+    secret TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL
+  )
+`);
+
 module.exports = db;

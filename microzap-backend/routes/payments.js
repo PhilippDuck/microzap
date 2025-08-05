@@ -4,6 +4,7 @@ const QRCode = require("qrcode");
 const sqlite3 = require("sqlite3").verbose();
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
+const lnurlServer = require("../lnurlServer");
 const {
   LNBITS_URL,
   INVOICE_READ_KEY,
@@ -173,6 +174,127 @@ router.get("/check-payment/:hash", async (req, res) => {
       res.status(500).json({ error: "Fehler beim Überprüfen der Zahlung" });
     }
   }
+});
+
+// Nun der API-Endpunkt: POST /initiate-premium-refund
+router.post("/initiate-premium-refund", (req, res) => {
+  const token = req.cookies.authToken;
+  if (!token) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.sub;
+
+    // Optional: Überprüfe Premium-Status und 24h-Frist (redundant zum Frontend, aber sicher)
+    db.get(
+      "SELECT premium_start FROM users WHERE id = ?",
+      [userId],
+      (err, row) => {
+        if (err || !row) {
+          return res
+            .status(500)
+            .json({ error: "Datenbankfehler oder User nicht gefunden" });
+        }
+        const premiumStart = row.premium_start
+          ? new Date(row.premium_start)
+          : null;
+        if (
+          !premiumStart ||
+          Date.now() - premiumStart.getTime() >= 24 * 60 * 60 * 1000
+        ) {
+          return res
+            .status(403)
+            .json({ error: "Rückerstattung nicht möglich" });
+        }
+
+        // Generiere Withdraw-Request
+        const tag = "withdrawRequest";
+        const params = {
+          minWithdrawable: PREMIUM_AMOUNT * 1000, // msats (angenommen PREMIUM_AMOUNT in sat)
+          maxWithdrawable: PREMIUM_AMOUNT * 1000,
+          defaultDescription: "Premium Rückerstattung",
+        };
+        const options = { uses: 1 }; // Einmalig
+
+        lnurlServer
+          .generateNewUrl(tag, params, options)
+          .then(async (result) => {
+            const { encoded: lnurlString, secret } = result;
+            console.log("lnurlstring: " + lnurlString);
+            // Speichere secret mit userId in DB für späteren Lookup im Event
+            db.run(
+              "INSERT INTO withdraw_secrets (secret, user_id) VALUES (?, ?)",
+              [secret, userId],
+              (insertErr) => {
+                if (insertErr) {
+                  console.error("Error saving secret:", insertErr);
+                  return res
+                    .status(500)
+                    .json({ error: "Fehler beim Speichern" });
+                }
+              }
+            );
+
+            // Generiere QR-Code als Base64-URL
+            let qrCodeUrl;
+            try {
+              qrCodeUrl = await QRCode.toDataURL(lnurlString, {
+                width: 256,
+                errorCorrectionLevel: "H",
+              });
+            } catch (qrErr) {
+              console.error("Error generating QR:", qrErr);
+              return res
+                .status(500)
+                .json({ error: "Fehler beim Generieren des QR-Codes" });
+            }
+
+            res.json({ lnurl: lnurlString, qrCodeUrl });
+          })
+          .catch((error) => {
+            console.error("Error generating LNURL:", error);
+            res
+              .status(500)
+              .json({ error: "Fehler beim Generieren der Withdraw-Request" });
+          });
+      }
+    );
+  } catch (err) {
+    console.error("JWT verification failed:", err.message);
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+// Global Event-Handler für erfolgreichen Withdraw (deaktiviere Premium)
+lnurlServer.on("withdrawRequest:action:processed", (event) => {
+  const { secret } = event;
+  // Lookup in DB: Angenommen, du hast eine Tabelle 'withdraw_secrets' mit secret und user_id
+  db.get(
+    "SELECT user_id FROM withdraw_secrets WHERE secret = ?",
+    [secret],
+    (err, row) => {
+      if (err || !row) {
+        console.error("Error finding user for secret:", err || "No row");
+        return;
+      }
+      const userId = row.user_id;
+      db.run(
+        "UPDATE users SET premium_start = NULL, premium_end = NULL WHERE id = ?",
+        [userId],
+        (updateErr) => {
+          if (updateErr) {
+            console.error("Error deactivating premium:", updateErr);
+          } else {
+            console.log(`Premium deaktiviert für User ${userId} nach Withdraw`);
+            // Optional: Lösche den Eintrag
+            db.run("DELETE FROM withdraw_secrets WHERE secret = ?", [secret]);
+          }
+        }
+      );
+    }
+  );
 });
 
 module.exports = router;

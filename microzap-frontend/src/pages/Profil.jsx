@@ -10,8 +10,12 @@ function Profile() {
   const [walletId, setWalletId] = useState(null);
   const [accountStatus, setAccountStatus] = useState("free");
   const [premiumEnd, setPremiumEnd] = useState(null);
+  const [premiumStart, setPremiumStart] = useState(null); // Neu: Für die 24h-Überprüfung
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showWithdrawQR, setShowWithdrawQR] = useState(false); // Neu: Steuert die Anzeige des QR-Codes
+  const [withdrawLnurl, setWithdrawLnurl] = useState(null); // Neu: Speichert die LNURL für Withdraw (optional, falls benötigt)
+  const [qrCodeUrl, setQrCodeUrl] = useState(null); // Neu: Speichert die QR-Code-URL vom Backend
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -23,7 +27,9 @@ function Profile() {
           const response = await axios.get("http://localhost:3001/user-info", {
             withCredentials: true,
           });
+
           const data = response.data;
+          console.log(data);
           setWalletId(data.walletId);
           setAccountStatus(data.status);
           setPremiumEnd(
@@ -35,6 +41,11 @@ function Profile() {
                   hour: "2-digit",
                   minute: "2-digit",
                 })
+              : null
+          );
+          setPremiumStart(
+            data.premiumStart
+              ? new Date(data.premiumStart).toISOString() // Speichere als ISO-String für Berechnungen
               : null
           );
         }
@@ -58,6 +69,39 @@ function Profile() {
     deleteAccount(); // Rufe die deleteAccount-Funktion aus AuthContext auf
     navigate("/"); // Weiterleitung zur Startseite
   };
+
+  const handleRefund = async () => {
+    try {
+      const response = await axios.post(
+        "http://localhost:3001/initiate-premium-refund",
+        {},
+        { withCredentials: true }
+      );
+      setWithdrawLnurl(response.data.lnurl); // Optional: Falls du die LNURL noch brauchst
+      setQrCodeUrl(response.data.qrCodeUrl); // Angenommen, Backend sendet { lnurl: "lnurl1...", qrCodeUrl: "data:image/png;base64,..." oder eine URL }
+      setShowWithdrawQR(true);
+      toaster.create({
+        title: "Erfolg",
+        description:
+          "Scan den QR-Code mit deiner Wallet, um das Geld zurückzuholen.",
+        type: "success",
+      });
+    } catch (err) {
+      console.error("Error initiating refund:", err);
+      toaster.create({
+        title: "Fehler",
+        description: "Fehler beim Initiieren der Rückerstattung",
+        type: "error",
+      });
+    }
+  };
+
+  // Überprüfung, ob Rückerstattung möglich (weniger als 24 Stunden seit Premium-Start)
+  const isRefundPossible =
+    isAuthenticated &&
+    accountStatus === "premium" &&
+    premiumStart &&
+    Date.now() - new Date(premiumStart).getTime() < 24 * 60 * 60 * 1000; // 24 Stunden in Millisekunden
 
   if (error) {
     return (
@@ -98,6 +142,38 @@ function Profile() {
               <Text>
                 <strong>Premium läuft bis:</strong> {premiumEnd}
               </Text>
+            )}
+            {isRefundPossible && (
+              <>
+                <Text>
+                  Du kannst dein Premium innerhalb der ersten 24 Stunden
+                  kündigen und das Geld zurückholen.
+                </Text>
+                <Button
+                  colorPalette="green"
+                  variant="solid"
+                  onClick={handleRefund}
+                >
+                  Geld zurückholen und Premium kündigen
+                </Button>
+              </>
+            )}
+            {showWithdrawQR && qrCodeUrl && (
+              <VStack spacing={4} align="center" mt={4}>
+                <Text>
+                  Scan diesen QR-Code mit deiner Lightning-Wallet, um die
+                  Rückerstattung durchzuführen:
+                </Text>
+                <img
+                  src={qrCodeUrl}
+                  alt="Withdraw QR Code"
+                  style={{ width: "256px", height: "256px" }}
+                />
+                <Text>
+                  Nach dem Scan: Aktualisiere die Seite, um den Status zu
+                  überprüfen.
+                </Text>
+              </VStack>
             )}
             <Button
               colorPalette="red"
