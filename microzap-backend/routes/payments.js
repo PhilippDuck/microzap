@@ -223,9 +223,9 @@ router.post("/initiate-premium-refund", (req, res) => {
           .then(async (result) => {
             const { encoded: lnurlString, secret } = result;
             console.log("lnurlstring: " + lnurlString);
-            // Speichere secret mit userId in DB für späteren Lookup im Event
+            // Speichere secret mit userId und status 'polling' in DB
             db.run(
-              "INSERT INTO withdraw_secrets (secret, user_id) VALUES (?, ?)",
+              "INSERT INTO withdraw_secrets (secret, user_id, status) VALUES (?, ?, 'polling')",
               [secret, userId],
               (insertErr) => {
                 if (insertErr) {
@@ -288,13 +288,63 @@ lnurlServer.on("withdrawRequest:action:processed", (event) => {
             console.error("Error deactivating premium:", updateErr);
           } else {
             console.log(`Premium deaktiviert für User ${userId} nach Withdraw`);
-            // Optional: Lösche den Eintrag
-            db.run("DELETE FROM withdraw_secrets WHERE secret = ?", [secret]);
+
+            // Setze Status auf 'success' für diesen Eintrag
+            db.run(
+              "UPDATE withdraw_secrets SET status = 'success' WHERE secret = ?",
+              [secret],
+              (statusErr) => {
+                if (statusErr) {
+                  console.error("Error updating status to success:", statusErr);
+                }
+              }
+            );
+
+            // Lösche alle 'polling'-Einträge, die älter als 5 Minuten sind
+            const fiveMinutesAgo = new Date(
+              Date.now() - 5 * 60 * 1000
+            ).toISOString();
+            db.run(
+              "DELETE FROM withdraw_secrets WHERE status = 'polling' AND created_at < ?",
+              [fiveMinutesAgo],
+              (deleteErr) => {
+                if (deleteErr) {
+                  console.error(
+                    "Error deleting old polling entries:",
+                    deleteErr
+                  );
+                } else {
+                  console.log("Alte polling-Einträge gelöscht");
+                }
+              }
+            );
           }
         }
       );
     }
   );
+});
+
+router.get("/check-withdraw-status", (req, res) => {
+  const token = req.cookies.authToken;
+  if (!token) return res.status(401).json({ error: "Not authenticated" });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.sub;
+
+    db.get(
+      "SELECT premium_end FROM users WHERE id = ?",
+      [userId],
+      (err, row) => {
+        if (err || !row)
+          return res.status(500).json({ error: "Datenbankfehler" });
+        res.json({ withdrawn: row.premium_end === null });
+      }
+    );
+  } catch (err) {
+    res.status(401).json({ error: "Invalid token" });
+  }
 });
 
 module.exports = router;

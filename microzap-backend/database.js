@@ -23,7 +23,9 @@ db.serialize(() => {
 db.run(`
   CREATE TABLE IF NOT EXISTS withdraw_secrets (
     secret TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL
+    user_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'polling',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP 
   )
 `);
 

@@ -18,50 +18,50 @@ function Profile() {
   const [qrCodeUrl, setQrCodeUrl] = useState(null); // Neu: Speichert die QR-Code-URL vom Backend
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        if (isAuthenticated) {
-          const response = await axios.get("http://localhost:3001/user-info", {
-            withCredentials: true,
-          });
-
-          const data = response.data;
-          console.log(data);
-          setWalletId(data.walletId);
-          setAccountStatus(data.status);
-          setPremiumEnd(
-            data.premiumEnd
-              ? new Date(data.premiumEnd).toLocaleString("de-DE", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : null
-          );
-          setPremiumStart(
-            data.premiumStart
-              ? new Date(data.premiumStart).toISOString() // Speichere als ISO-String für Berechnungen
-              : null
-          );
-        }
-      } catch (err) {
-        console.error("Error fetching user info:", err);
-        setError("Fehler beim Abrufen der Profilinformationen");
-        toaster.create({
-          title: "Fehler",
-          description: "Fehler beim Abrufen der Profilinformationen",
-          type: "error",
+  const fetchUserInfo = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (isAuthenticated) {
+        const response = await axios.get("http://localhost:3001/user-info", {
+          withCredentials: true,
         });
-      } finally {
-        setLoading(false);
-      }
-    };
 
+        const data = response.data;
+        console.log(data);
+        setWalletId(data.walletId);
+        setAccountStatus(data.status);
+        setPremiumEnd(
+          data.premiumEnd
+            ? new Date(data.premiumEnd).toLocaleString("de-DE", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : null
+        );
+        setPremiumStart(
+          data.premiumStart
+            ? new Date(data.premiumStart).toISOString() // Speichere als ISO-String für Berechnungen
+            : null
+        );
+      }
+    } catch (err) {
+      console.error("Error fetching user info:", err);
+      setError("Fehler beim Abrufen der Profilinformationen");
+      toaster.create({
+        title: "Fehler",
+        description: "Fehler beim Abrufen der Profilinformationen",
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchUserInfo();
   }, [isAuthenticated]);
 
@@ -95,6 +95,37 @@ function Profile() {
       });
     }
   };
+
+  // Polling für Withdraw-Status nach Anzeige des QR-Codes
+  useEffect(() => {
+    if (!showWithdrawQR) return;
+
+    const checkWithdrawStatus = async () => {
+      try {
+        const response = await axios.get(
+          "http://localhost:3001/check-withdraw-status",
+          {
+            withCredentials: true,
+          }
+        );
+        if (response.data.withdrawn) {
+          await fetchUserInfo(); // Aktualisiere Profil-Daten
+          setShowWithdrawQR(false);
+          toaster.create({
+            title: "Erfolg",
+            description: "Rückerstattung abgeschlossen, Premium deaktiviert.",
+            type: "success",
+          });
+        }
+      } catch (err) {
+        console.error("Error checking withdraw status:", err);
+      }
+    };
+
+    const intervalId = setInterval(checkWithdrawStatus, 3000);
+
+    return () => clearInterval(intervalId);
+  }, [showWithdrawQR]);
 
   // Überprüfung, ob Rückerstattung möglich (weniger als 24 Stunden seit Premium-Start)
   const isRefundPossible =
@@ -169,10 +200,8 @@ function Profile() {
                   alt="Withdraw QR Code"
                   style={{ width: "256px", height: "256px" }}
                 />
-                <Text>
-                  Nach dem Scan: Aktualisiere die Seite, um den Status zu
-                  überprüfen.
-                </Text>
+                <Text>Überprüfe den Status automatisch...</Text>{" "}
+                {/* Aktualisierter Text */}
               </VStack>
             )}
             <Button
