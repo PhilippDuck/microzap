@@ -6,7 +6,7 @@ require("dotenv").config();
 
 const lnurlServer = lnurl.createServer({
   host: "localhost",
-  url: "https://d6d8f5301f56.ngrok-free.app",
+  url: "https://a85544e66d78.ngrok-free.app",
   port: 3005,
   auth: {
     apiKeys: [

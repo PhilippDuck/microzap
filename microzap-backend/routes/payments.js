@@ -54,54 +54,80 @@ router.get("/get-price", (req, res) => {
   res.json({ amount: price });
 });
 
+// Dieser Endpunkt erstellt eine Lightning-Rechnung über die LNBits-API.
+// Er verarbeitet Anfragen für Premium-Zugriff oder die Freischaltung eines spezifischen Artikels,
+// generiert den entsprechenden Betrag und Memo, sendet eine POST-Anfrage an LNBits,
+// extrahiert den Payment Request (bolt11) und Hash, erstellt einen QR-Code und gibt diese Daten als JSON zurück.
+// Im Fehlerfall wird ein 500-Status mit einer Fehlermeldung gesendet.
 router.post("/create-invoice", async (req, res) => {
+  // Extrahiere Typ und Artikel-ID aus dem Request-Body
   const { type, articleId } = req.body;
+
+  // Bestimme den Betrag basierend auf dem Typ (premium oder standard)
   let amount = type === "premium" ? PREMIUM_AMOUNT : PAYMENT_AMOUNT;
+
+  // Erstelle eine Beschreibung (Memo) für die Rechnung, abhängig vom Typ
   let memo =
     type === "premium"
-      ? "Premium-Zugriff"
-      : `Freischaltung Artikel ${articleId}`;
+      ? "Premium-Zugriff" // Für Premium-Zugang
+      : `Freischaltung Artikel ${articleId}`; // Für die Freischaltung eines spezifischen Artikels
 
   try {
+    // Überprüfe, ob der API-Schlüssel für LNBits vorhanden ist
     if (!INVOICE_READ_KEY) throw new Error("INVOICE_READ_KEY fehlt");
 
-    const requestData = { amount, memo, out: false };
+    // Bereite die Anfragedaten für die LNBits-API vor
+    const requestData = { amount, memo, out: false }; // out: false bedeutet, es handelt sich um eine eingehende Zahlung (Rechnung)
+
+    // Definiere die HTTP-Header für die API-Anfrage
     const requestHeaders = {
       "Content-Type": "application/json",
       "X-Api-Key": INVOICE_READ_KEY,
     };
 
+    // Logge die API-Anfrage für Debugging-Zwecke (sensibler Key wird redigiert)
     console.debug("[POST /create-invoice] LNBits API Request:", {
       url: `${LNBITS_URL}/api/v1/payments`,
       data: requestData,
       headers: { ...requestHeaders, "X-Api-Key": "[REDACTED]" },
     });
 
+    // Sende eine POST-Anfrage an die LNBits-API, um die Rechnung zu erstellen
     const response = await axios.post(
       `${LNBITS_URL}/api/v1/payments`,
       requestData,
       { headers: requestHeaders }
     );
+
+    // Extrahiere bolt11 (Payment Request) und payment_hash aus der API-Antwort
     const { bolt11, payment_hash } = response.data;
 
+    // Logge die API-Antwort für Debugging
     console.debug("[POST /create-invoice] LNBits API Response:", {
       status: response.status,
       data: { bolt11, payment_hash },
     });
 
+    // Überprüfe, ob ein gültiger bolt11 vorhanden ist
     if (!bolt11) throw new Error("Ungültige bolt11");
 
+    // Generiere einen QR-Code aus dem bolt11-String als Data-URL
     const qrCode = await QRCode.toDataURL(bolt11);
+
+    // Sende die Rechnungsdaten als JSON-Antwort zurück (Payment Request, Hash und QR-Code)
     res.json({ paymentRequest: bolt11, paymentHash: payment_hash, qrCode });
   } catch (error) {
+    // Logge den Fehler detailliert für Debugging
     console.error(
       "[POST /create-invoice] Fehler beim Erstellen der Rechnung:",
       {
         message: error.message,
         stack: error.stack,
-        response: error.response?.data,
+        response: error.response?.data, // Falls eine API-Antwort vorhanden ist
       }
     );
+
+    // Sende eine Fehlerantwort mit Status 500 zurück
     res
       .status(500)
       .json({ error: `Fehler beim Erstellen der Rechnung: ${error.message}` });
