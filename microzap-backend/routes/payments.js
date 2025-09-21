@@ -62,58 +62,47 @@ router.get("/get-price", (req, res) => {
 router.post("/create-invoice", async (req, res) => {
   // Extrahiere Typ und Artikel-ID aus dem Request-Body
   const { type, articleId } = req.body;
-
   // Bestimme den Betrag basierend auf dem Typ (premium oder standard)
   let amount = type === "premium" ? PREMIUM_AMOUNT : PAYMENT_AMOUNT;
-
   // Erstelle eine Beschreibung (Memo) für die Rechnung, abhängig vom Typ
   let memo =
     type === "premium"
       ? "Premium-Zugriff" // Für Premium-Zugang
       : `Freischaltung Artikel ${articleId}`; // Für die Freischaltung eines spezifischen Artikels
-
   try {
     // Überprüfe, ob der API-Schlüssel für LNBits vorhanden ist
     if (!INVOICE_READ_KEY) throw new Error("INVOICE_READ_KEY fehlt");
-
     // Bereite die Anfragedaten für die LNBits-API vor
-    const requestData = { amount, memo, out: false }; // out: false bedeutet, es handelt sich um eine eingehende Zahlung (Rechnung)
-
+    const requestData = { amount, memo, out: false }; // out: false bedeutet,
+    //  es handelt sich um eine eingehende Zahlung (Rechnung)
     // Definiere die HTTP-Header für die API-Anfrage
     const requestHeaders = {
       "Content-Type": "application/json",
       "X-Api-Key": INVOICE_READ_KEY,
     };
-
     // Logge die API-Anfrage für Debugging-Zwecke (sensibler Key wird redigiert)
     console.debug("[POST /create-invoice] LNBits API Request:", {
       url: `${LNBITS_URL}/api/v1/payments`,
       data: requestData,
       headers: { ...requestHeaders, "X-Api-Key": "[REDACTED]" },
     });
-
     // Sende eine POST-Anfrage an die LNBits-API, um die Rechnung zu erstellen
     const response = await axios.post(
       `${LNBITS_URL}/api/v1/payments`,
       requestData,
       { headers: requestHeaders }
     );
-
     // Extrahiere bolt11 (Payment Request) und payment_hash aus der API-Antwort
     const { bolt11, payment_hash } = response.data;
-
     // Logge die API-Antwort für Debugging
     console.debug("[POST /create-invoice] LNBits API Response:", {
       status: response.status,
       data: { bolt11, payment_hash },
     });
-
     // Überprüfe, ob ein gültiger bolt11 vorhanden ist
     if (!bolt11) throw new Error("Ungültige bolt11");
-
     // Generiere einen QR-Code aus dem bolt11-String als Data-URL
     const qrCode = await QRCode.toDataURL(bolt11);
-
     // Sende die Rechnungsdaten als JSON-Antwort zurück (Payment Request, Hash und QR-Code)
     res.json({ paymentRequest: bolt11, paymentHash: payment_hash, qrCode });
   } catch (error) {
